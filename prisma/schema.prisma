@@ -1,0 +1,350 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String    @id @default(cuid())
+  name             String
+  username         String    @unique
+  email            String    @unique
+  password         String
+  role             String    @default("USER") // USER, ADMIN, MODERATOR
+  avatar           String?
+  phone            String?
+  pin              String?   // Hashed 6-digit transaction PIN
+  twoFactorSecret  String?
+  twoFactorEnabled Boolean   @default(false)
+  status           String    @default("ACTIVE") // ACTIVE, FROZEN, SUSPENDED
+  tier             String    @default("FREE") // FREE, PRO
+  kycLevel         String    @default("LEVEL_0") // LEVEL_0, LEVEL_1, LEVEL_2, LEVEL_3
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  wallets           Wallet[]
+  transactions      Transaction[]
+  sentTransfers     Transfer[]        @relation("SentTransfers")
+  receivedTransfers Transfer[]        @relation("ReceivedTransfers")
+  sentRequests      MoneyRequest[]    @relation("SentRequests")
+  receivedRequests  MoneyRequest[]    @relation("ReceivedRequests")
+  createdPots       SharedPot[]       @relation("CreatedPots")
+  potContributions  PotContribution[]
+  virtualCards      VirtualCard[]
+  cardPurchases     CardPurchase[]
+  recurringPayments RecurringPayment[]
+  notifications     Notification[]
+  securityLogs      SecurityLog[]
+  fraudAlerts       FraudAlert[]
+  kycRecord         KYC?
+  bankAccounts      BankAccount[]
+  deposits          Deposit[]
+  withdrawals       Withdrawal[]
+}
+
+model Wallet {
+  id                 String   @id @default(cuid())
+  userId             String
+  walletNumber       String   @unique
+  balance            Float    @default(0.0)
+  availableBalance   Float    @default(0.0)
+  lockedBalance      Float    @default(0.0)
+  currency           String   @default("USD")
+  status             String   @default("ACTIVE") // ACTIVE, FROZEN, SUSPENDED
+  dailyTransferLimit Float    @default(1000.0)
+  dailySpentToday    Float    @default(0.0)
+  lastSpentDate      DateTime @default(now())
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+  deposits     Deposit[]
+  withdrawals  Withdrawal[]
+}
+
+model KYC {
+  id                 String    @id @default(cuid())
+  userId             String    @unique
+  level              String    @default("LEVEL_1") // LEVEL_1, LEVEL_2, LEVEL_3
+  status             String    @default("UNVERIFIED") // UNVERIFIED, PENDING, APPROVED, REJECTED
+  firstName          String?
+  lastName           String?
+  dob                String?
+  address            String?
+  city               String?
+  country            String?
+  postalCode         String?
+  idType             String?   // PASSPORT, NATIONAL_ID, DRIVING_LICENSE
+  idNumber           String?
+  idFrontUrl         String?
+  idBackUrl          String?
+  selfieUrl          String?
+  proofOfAddressUrl  String?
+  rejectionReason    String?
+  reviewedBy         String?
+  reviewedAt         DateTime?
+  submittedAt        DateTime?
+  updatedAt          DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Transaction {
+  id                  String   @id @default(cuid())
+  walletId            String
+  userId              String
+  type                String   // DEPOSIT, WITHDRAWAL, TRANSFER_SENT, TRANSFER_RECEIVED, REQUEST_PAID, REQUEST_RECEIVED, POT_CONTRIBUTION, POT_PAYOUT, FEE, BONUS, REFUND, RECURRING_PAYMENT, CARD_PURCHASE
+  amount              Float
+  fee                 Float    @default(0.0)
+  currency            String   @default("USD")
+  status              String   @default("COMPLETED") // PENDING, COMPLETED, FAILED, CANCELLED, REFUNDED
+  reference           String   @unique
+  description         String
+  senderWalletNumber  String?
+  receiverWalletNumber String?
+  metadata            String?  // JSON string
+  riskScore           String   @default("LOW") // LOW, MEDIUM, HIGH
+  isDisputed          Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Transfer {
+  id                  String   @id @default(cuid())
+  senderId            String
+  receiverId          String
+  amount              Float
+  fee                 Float    @default(0.0)
+  currency            String   @default("USD")
+  note                String?
+  status              String   @default("COMPLETED") // COMPLETED, PENDING, FAILED, CANCELLED
+  transferPinVerified Boolean  @default(false)
+  twoFactorVerified   Boolean  @default(false)
+  createdAt           DateTime @default(now())
+
+  sender   User @relation("SentTransfers", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User @relation("ReceivedTransfers", fields: [receiverId], references: [id], onDelete: Cascade)
+}
+
+model MoneyRequest {
+  id          String    @id @default(cuid())
+  requesterId String
+  payerId     String?
+  payerEmail  String
+  amount      Float
+  currency    String    @default("USD")
+  note        String?
+  status      String    @default("PENDING") // PENDING, PAID, DECLINED, EXPIRED
+  dueDate     DateTime?
+  paidAt      DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  requester User  @relation("SentRequests", fields: [requesterId], references: [id], onDelete: Cascade)
+  payer     User? @relation("ReceivedRequests", fields: [payerId], references: [id], onDelete: SetNull)
+}
+
+model Deposit {
+  id              String   @id @default(cuid())
+  walletId        String
+  userId          String
+  amount          Float
+  fee             Float    @default(0.0)
+  netAmount       Float
+  currency        String   @default("USD")
+  method          String   @default("STRIPE") // STRIPE, BANK_TRANSFER, CRYPTO, MOCK_CARD
+  stripeSessionId String?
+  receiptUrl      String?
+  status          String   @default("COMPLETED") // PENDING, COMPLETED, FAILED
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Withdrawal {
+  id            String   @id @default(cuid())
+  walletId      String
+  userId        String
+  bankAccountId String?
+  amount        Float
+  fee           Float    @default(0.0)
+  netAmount     Float
+  currency      String   @default("USD")
+  status        String   @default("PENDING") // PENDING, PROCESSING, APPROVED, REJECTED
+  bankName      String
+  accountNumber String
+  iban          String?
+  adminNotes    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  wallet      Wallet       @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bankAccount BankAccount? @relation(fields: [bankAccountId], references: [id], onDelete: SetNull)
+}
+
+model BankAccount {
+  id                String   @id @default(cuid())
+  userId            String
+  bankName          String
+  accountHolderName String
+  accountNumber     String
+  routingNumber     String?
+  iban              String?
+  swiftCode         String?
+  isDefault         Boolean  @default(false)
+  isVerified        Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  withdrawals Withdrawal[]
+}
+
+model SharedPot {
+  id              String    @id @default(cuid())
+  creatorId       String
+  title           String
+  description     String?
+  targetAmount    Float
+  currentAmount   Float     @default(0.0)
+  currency        String    @default("USD")
+  potType         String    @default("SAVINGS") // SAVINGS, BETTING_SIMULATION, ESCROW
+  status          String    @default("ACTIVE") // ACTIVE, FILLED, SETTLED, CANCELLED
+  lockUntil       DateTime?
+  winnerId        String?
+  escrowBuyerId   String?
+  escrowSellerId  String?
+  escrowStatus    String?   // HOLDING, RELEASE_REQUESTED, DISPUTED, RELEASED
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  creator       User              @relation("CreatedPots", fields: [creatorId], references: [id], onDelete: Cascade)
+  contributions PotContribution[]
+}
+
+model PotContribution {
+  id        String   @id @default(cuid())
+  potId     String
+  userId    String
+  amount    Float
+  currency  String   @default("USD")
+  status    String   @default("COMPLETED") // COMPLETED, REFUNDED
+  note      String?
+  createdAt DateTime @default(now())
+
+  pot  SharedPot @relation(fields: [potId], references: [id], onDelete: Cascade)
+  user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VirtualCard {
+  id              String   @id @default(cuid())
+  userId          String
+  cardHolder      String
+  cardNumber      String
+  last4           String
+  expiryMonth     Int
+  expiryYear      Int
+  cvv             String
+  cardType        String   @default("VISA") // VISA, MASTERCARD
+  cardSkin        String   @default("NEON_CYAN") // NEON_CYAN, PLATINUM_CARBON, GOLD_LUXURY, EMERALD_MATRIX
+  status          String   @default("ACTIVE") // ACTIVE, FROZEN, TERMINATED
+  spendingLimit   Float    @default(2000.0)
+  currentSpent    Float    @default(0.0)
+  isContactless   Boolean  @default(true)
+  isOnlineActive  Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cardPurchases CardPurchase[]
+}
+
+model CardPurchase {
+  id               String   @id @default(cuid())
+  cardId           String
+  userId           String
+  merchantName     String
+  merchantCategory String
+  amount           Float
+  currency         String   @default("USD")
+  status           String   @default("APPROVED") // APPROVED, DECLINED
+  createdAt        DateTime @default(now())
+
+  card VirtualCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RecurringPayment {
+  id                  String    @id @default(cuid())
+  userId              String
+  recipientName       String
+  recipientIdentifier String    // Email or Wallet Number
+  amount              Float
+  currency            String    @default("USD")
+  frequency           String    @default("MONTHLY") // DAILY, WEEKLY, MONTHLY, YEARLY
+  nextExecution       DateTime
+  lastExecuted        DateTime?
+  status              String    @default("ACTIVE") // ACTIVE, PAUSED, CANCELLED
+  failureCount        Int       @default(0)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  type      String   @default("SYSTEM") // TRANSACTION, SECURITY, SYSTEM, KYC, POT
+  isRead    Boolean  @default(false)
+  link      String?
+  metadata  String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model SecurityLog {
+  id        String   @id @default(cuid())
+  userId    String
+  event     String   // LOGIN, LOGOUT, PASSWORD_CHANGE, PIN_CHANGE, TWO_FACTOR_TOGGLE, TRANSFER_MADE, WITHDRAWAL_MADE, FAILED_LOGIN
+  ipAddress String?
+  userAgent String?
+  device    String?
+  browser   String?
+  os        String?
+  location  String?
+  riskLevel String   @default("LOW") // LOW, MEDIUM, HIGH
+  status    String   @default("SUCCESS") // SUCCESS, BLOCKED, FLAGGED
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model FraudAlert {
+  id             String    @id @default(cuid())
+  userId         String
+  transactionId  String?
+  ruleTriggered  String
+  riskScore      String    @default("HIGH") // LOW, MEDIUM, HIGH
+  details        String
+  status         String    @default("OPEN") // OPEN, INVESTIGATING, RESOLVED, DISMISSED
+  resolvedBy     String?
+  resolvedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
