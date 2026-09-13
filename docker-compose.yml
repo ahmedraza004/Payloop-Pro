@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: payloop-pro-app
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://payloop_user:payloop_password@postgres:5432/payloop_db?schema=public
+      - JWT_SECRET=payloop_super_secret_jwt_key_production_2026_fintech
+      - NEXTAUTH_SECRET=payloop_super_secret_nextauth_production_2026
+      - NEXTAUTH_URL=http://localhost:3000
+      - NEXT_PUBLIC_APP_URL=http://localhost:3000
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-sk_test_mock_stripe_secret}
+      - NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-pk_test_mock_stripe_key}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-whsec_mock_stripe_webhook}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - payloop-network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: payloop-pro-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: payloop_user
+      POSTGRES_PASSWORD: payloop_password
+      POSTGRES_DB: payloop_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U payloop_user -d payloop_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - payloop-network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  payloop-network:
+    driver: bridge
